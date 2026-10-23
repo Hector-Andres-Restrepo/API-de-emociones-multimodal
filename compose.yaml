@@ -1,0 +1,21 @@
+services:
+  api:
+    build: .
+    image: emotions-api:1.0.0
+    env_file:
+      - .env
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    volumes:
+      - models_data:/models          # pesos y caché de Hugging Face (persisten entre reinicios)
+    tmpfs:
+      - /tmp/emotions:size=512m,uid=1000   # archivos temporales: se pierden al reiniciar
+    deploy:
+      resources:
+        limits:
+          memory: ${MEM_LIMIT:-4g}
+          cpus: "${CPU_LIMIT:-2.0}"
+    restart: unless-stopped
+
+volumes:
+  models_data:

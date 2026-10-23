@@ -1,0 +1,115 @@
+### Variables (VS Code REST Client / JetBrains HTTP Client)
+@base = http://localhost:8000
+@token = cambia-este-token-por-uno-largo-y-aleatorio
+
+### Salud
+GET {{base}}/health/live
+
+###
+GET {{base}}/health/ready
+
+### Texto
+POST {{base}}/api/v1/emotions/text
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "text": "Hoy me siento muy feliz", "language": "es" }
+
+### Texto - idioma no soportado (422 UNSUPPORTED_LANGUAGE)
+POST {{base}}/api/v1/emotions/text
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "text": "I feel great", "language": "en" }
+
+### Imagen (reemplace la ruta)
+POST {{base}}/api/v1/emotions/image
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=B
+
+--B
+Content-Disposition: form-data; name="image"; filename="rostro.jpg"
+Content-Type: image/jpeg
+
+< ./samples/rostro.jpg
+--B--
+
+### Video (202 Accepted)
+# @name video
+POST {{base}}/api/v1/emotions/video
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=B
+
+--B
+Content-Disposition: form-data; name="sampleFps"
+
+2
+--B
+Content-Disposition: form-data; name="video"; filename="clip.mp4"
+Content-Type: video/mp4
+
+< ./samples/clip.mp4
+--B--
+
+### Consultar video
+GET {{base}}{{video.response.body.$.resultUrl}}
+Authorization: Bearer {{token}}
+
+### Multimodal texto + imagen
+POST {{base}}/api/v1/emotions/analyze
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=B
+
+--B
+Content-Disposition: form-data; name="text"
+
+Estoy muy triste
+--B
+Content-Disposition: form-data; name="visualWeight"
+
+0.5
+--B
+Content-Disposition: form-data; name="image"; filename="rostro.jpg"
+Content-Type: image/jpeg
+
+< ./samples/rostro.jpg
+--B--
+
+### Multimodal texto + video (202) -> luego GET /emotions/analyze/{analysisId}
+# @name analyzeVideo
+POST {{base}}/api/v1/emotions/analyze
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=B
+
+--B
+Content-Disposition: form-data; name="text"
+
+Estoy muy triste
+--B
+Content-Disposition: form-data; name="video"; filename="clip.mp4"
+Content-Type: video/mp4
+
+< ./samples/clip.mp4
+--B--
+
+###
+GET {{base}}{{analyzeVideo.response.body.$.resultUrl}}
+Authorization: Bearer {{token}}
+
+### Crear sesión de cámara (devuelve sessionId, websocketPath y streamToken efímero)
+POST {{base}}/api/v1/emotions/streams
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "sampleFps": 2 }
+
+### WebSocket: no se puede probar en .http. Use scripts/camera_demo.py o ver docs/asyncapi.yaml
+
+### Crear sesión MULTIMODAL EN VIVO (cámara + texto mientras se escribe)
+POST {{base}}/api/v1/emotions/live
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "sampleFps": 2, "visualWeight": 0.5, "visualWindowSeconds": 5, "language": "es" }
+
+### WebSocket de /live: use /demo (tarjeta 6) o scripts/live_multimodal_demo.py; contrato en docs/asyncapi.yaml

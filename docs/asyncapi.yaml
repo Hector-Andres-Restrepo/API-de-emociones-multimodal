@@ -1,0 +1,278 @@
+asyncapi: 2.6.0
+info:
+  title: API de Emociones Multimodal - Cámara en vivo
+  version: 1.0.0
+  description: |
+    Fotogramas capturados por el CLIENTE (el contenedor no accede a la webcam) se envían como mensajes
+    binarios JPEG/PNG a 1-5 fps. El servidor mantiene una ventana de fotogramas por sesión y usa el LSTM de
+    Emo-AffectNet para el rostro principal. Las expresiones faciales no determinan el estado emocional interno.
+servers:
+  local:
+    url: localhost:8000
+    protocol: ws
+channels:
+  /api/v1/emotions/streams/{sessionId}:
+    parameters:
+      sessionId:
+        description: Devuelto por POST /api/v1/emotions/streams (REST, Bearer).
+        schema: { type: string }
+    description: |
+      Flujo de autenticación: (1) POST /api/v1/emotions/streams con Bearer -> sessionId + streamToken efímero
+      (un solo uso, TTL STREAM_TOKEN_TTL_SECONDS). (2) Conectar el WebSocket y enviar como PRIMER mensaje de
+      texto {"type":"auth","token":"<streamToken>"} dentro de 5 s. El token nunca va en la URL.
+    publish:
+      summary: Mensajes del cliente al servidor
+      message:
+        oneOf:
+          - $ref: '#/components/messages/Auth'
+          - $ref: '#/components/messages/Frame'
+          - $ref: '#/components/messages/Close'
+    subscribe:
+      summary: Mensajes del servidor al cliente
+      message:
+        oneOf:
+          - $ref: '#/components/messages/Ready'
+          - $ref: '#/components/messages/FrameResult'
+          - $ref: '#/components/messages/Dropped'
+          - $ref: '#/components/messages/Error'
+          - $ref: '#/components/messages/Closing'
+  /api/v1/emotions/live/{sessionId}:
+    parameters:
+      sessionId:
+        description: Devuelto por POST /api/v1/emotions/live (REST, Bearer).
+        schema: { type: string }
+    description: |
+      MULTIMODAL EN VIVO: cámara + texto mientras el usuario escribe. Flujo: (1) POST /api/v1/emotions/live con Bearer
+      -> sessionId + streamToken efímero (válido SOLO para este tipo de sesión). (2) Conectar y enviar como PRIMER mensaje
+      {"type":"auth","token":"<streamToken>"} dentro de 5 s. (3) Enviar fotogramas binarios (<= sampleFps) y mensajes
+      de texto JSON (el cliente espera ~500 ms tras la última tecla; el servidor exige >= textMinIntervalMs entre textos).
+      Cada evento devuelve una instantánea completa (update) con texto, rostro (media de las salidas del LSTM en los
+      últimos visualWindowSeconds), fusión tardía e incongruencia. Con 0 o varios rostros no hay fusión (fusionStatus).
+      La incongruencia es oposición de valencias, no indica engaño; un texto a medio escribir puede clasificarse distinto.
+    publish:
+      summary: Mensajes del cliente al servidor
+      message:
+        oneOf:
+          - $ref: '#/components/messages/Auth'
+          - $ref: '#/components/messages/Frame'
+          - $ref: '#/components/messages/LiveText'
+          - $ref: '#/components/messages/LiveConfig'
+          - $ref: '#/components/messages/Close'
+    subscribe:
+      summary: Mensajes del servidor al cliente
+      message:
+        oneOf:
+          - $ref: '#/components/messages/LiveReady'
+          - $ref: '#/components/messages/LiveUpdate'
+          - $ref: '#/components/messages/LiveDropped'
+          - $ref: '#/components/messages/LiveError'
+          - $ref: '#/components/messages/LiveClosing'
+components:
+  messages:
+    Auth:
+      name: auth
+      contentType: application/json
+      payload:
+        type: object
+        required: [type, token]
+        properties:
+          type: { const: auth }
+          token: { type: string, description: streamToken efímero }
+    Frame:
+      name: frame
+      contentType: application/octet-stream
+      summary: Fotograma JPEG o PNG en un mensaje binario (máx. MAX_FRAME_BYTES, por defecto 2 MB; a lo sumo sampleFps por segundo).
+    Close:
+      name: close
+      contentType: application/json
+      payload:
+        type: object
+        required: [type]
+        properties: { type: { const: close } }
+    Ready:
+      name: ready
+      payload:
+        type: object
+        properties:
+          sessionId: { type: string }
+          type: { const: ready }
+          sampleFps: { type: number }
+          windowFrames: { type: integer, description: tamaño de la ventana temporal del LSTM (por defecto 10) }
+          modelVersions: { type: object }
+    FrameResult:
+      name: frameResult
+      payload:
+        type: object
+        properties:
+          sessionId: { type: string }
+          timestampMs: { type: integer, description: ms desde el inicio de la sesión (reloj del servidor) }
+          facesDetected: { type: integer }
+          faces:
+            type: array
+            items:
+              type: object
+              properties:
+                faceId: { type: string, example: face-1 }
+                emotion: { type: string, enum: [ANGER, DISGUST, FEAR, HAPPINESS, NEUTRAL, SADNESS, SURPRISE] }
+                confidence: { type: number }
+                mode: { type: string, enum: [LSTM, STATIC_FRAME], description: "LSTM solo para face-1 (rostro de mayor área); los demás se evalúan cuadro a cuadro" }
+          temporal:
+            type: object
+            properties:
+              windowFrames: { type: integer }
+              windowFilled: { type: integer }
+          inferenceMs: { type: integer }
+          modelVersions: { type: object }
+          warnings: { type: array, items: { type: string }, description: "p. ej. NO_FACE_DETECTED" }
+    Dropped:
+      name: dropped
+      summary: El cliente envió más rápido que sampleFps; el cuadro se descartó.
+      payload:
+        type: object
+        properties:
+          sessionId: { type: string }
+          timestampMs: { type: integer }
+          dropped: { const: true }
+          warnings: { type: array, items: { type: string } }
+    Error:
+      name: error
+      payload:
+        type: object
+        properties:
+          sessionId: { type: string }
+          error:
+            type: object
+            properties:
+              code: { type: string, enum: [UNAUTHORIZED, PAYLOAD_TOO_LARGE, INVALID_FILE_FORMAT, VALIDATION_ERROR, MODEL_UNAVAILABLE, INFERENCE_ERROR, RATE_LIMIT_EXCEEDED] }
+              message: { type: string }
+    Closing:
+      name: closing
+      payload:
+        type: object
+        properties:
+          sessionId: { type: string }
+          type: { const: closing }
+          reason: { type: string, enum: [SESSION_TIMEOUT, CLIENT_CLOSE] }
+          framesProcessed: { type: integer }
+    LiveText:
+      name: liveText
+      contentType: application/json
+      summary: Texto actual del cuadro de escritura (reemplaza al anterior; texto vacío lo borra).
+      payload:
+        type: object
+        required: [type, text]
+        properties:
+          type: { const: text }
+          text: { type: string, description: "máx. MAX_TEXT_CHARS; no se guarda ni se registra" }
+          version: { type: integer, description: número de versión del cliente, se devuelve en text.textVersion }
+    LiveConfig:
+      name: liveConfig
+      contentType: application/json
+      payload:
+        type: object
+        required: [type, visualWeight]
+        properties:
+          type: { const: config }
+          visualWeight: { type: number, minimum: 0, maximum: 1 }
+    LiveReady:
+      name: liveReady
+      payload:
+        type: object
+        properties:
+          type: { const: ready }
+          sessionId: { type: string }
+          mode: { const: MULTIMODAL_LIVE }
+          sampleFps: { type: number }
+          visualWeight: { type: number }
+          visualWindowSeconds: { type: number }
+          incongruenceThreshold: { type: number }
+          windowFrames: { type: integer }
+          maxFrameBytes: { type: integer }
+          maxTextChars: { type: integer }
+          textMinIntervalMs: { type: integer }
+          modelVersions: { type: object }
+    LiveUpdate:
+      name: liveUpdate
+      payload:
+        type: object
+        properties:
+          type: { const: update }
+          trigger: { type: string, enum: [FRAME, TEXT, CONFIG] }
+          sessionId: { type: string }
+          timestampMs: { type: integer }
+          facesDetected: { type: [integer, "null"] }
+          fusionStatus: { type: string, enum: [OK, WAITING_FOR_TEXT, WAITING_FOR_FACE, FACE_COUNT_NOT_SUPPORTED_FOR_FUSION] }
+          text:
+            type: [object, "null"]
+            properties:
+              emotion: { type: string }
+              valence: { type: string, enum: [POSITIVE, NEGATIVE, NEUTRAL] }
+              confidence: { type: number }
+              probabilities: { type: object }
+              textVersion: { type: [integer, "null"] }
+              chars: { type: integer }
+          visual:
+            type: [object, "null"]
+            properties:
+              emotion: { type: string }
+              valence: { type: string }
+              confidence: { type: number }
+              probabilities: { type: object }
+              framesUsed: { type: integer }
+              windowSeconds: { type: number }
+              lastFrameAgeMs: { type: integer }
+              mode: { const: LSTM }
+          fusion:
+            type: [object, "null"]
+            properties:
+              method: { const: WEIGHTED_LATE_FUSION }
+              visualWeight: { type: number }
+              textWeight: { type: number }
+              emotion: { type: string }
+              confidence: { type: number }
+              probabilities: { type: object }
+              incongruence: { type: boolean }
+              incongruenceThreshold: { type: number }
+          inferenceMs: { type: integer }
+          modelVersions: { type: object }
+          warnings: { type: array, items: { type: string } }
+    LiveDropped:
+      name: liveDropped
+      summary: Fotograma o texto enviado demasiado pronto; el texto trae retryAfterMs para reenviar el último valor.
+      payload:
+        type: object
+        properties:
+          type: { const: dropped }
+          kind: { type: string, enum: [FRAME, TEXT] }
+          sessionId: { type: string }
+          retryAfterMs: { type: integer }
+          warnings: { type: array, items: { type: string } }
+    LiveError:
+      name: liveError
+      payload:
+        type: object
+        properties:
+          type: { const: error }
+          sessionId: { type: string }
+          error:
+            type: object
+            properties:
+              code: { type: string, enum: [UNAUTHORIZED, PAYLOAD_TOO_LARGE, INVALID_FILE_FORMAT, VALIDATION_ERROR, MODEL_UNAVAILABLE, INFERENCE_ERROR] }
+              message: { type: string }
+              details: { type: object }
+    LiveClosing:
+      name: liveClosing
+      payload:
+        type: object
+        properties:
+          type: { const: closing }
+          sessionId: { type: string }
+          reason: { type: string, enum: [SESSION_TIMEOUT, CLIENT_CLOSE] }
+          summary:
+            type: object
+            properties:
+              framesProcessed: { type: integer }
+              textsAnalyzed: { type: integer }
+              fusionsComputed: { type: integer }
+              incongruentFusions: { type: integer }
+  # Códigos de cierre: 1000 normal/timeout; 1008 autenticación fallida; 1009 fotograma demasiado grande; 1011 modelo no disponible.

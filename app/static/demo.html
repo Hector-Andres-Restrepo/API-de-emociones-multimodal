@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo · API de Emociones Multimodal</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1c2230; --mute:#5d6678; --line:#dde1e8; --acc:#2456d6; --ok:#157a3d; --err:#b3261e; --warn:#8a5a00; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12151c; --card:#1b2029; --ink:#e8ebf2; --mute:#98a1b3; --line:#2c3341; --acc:#7da2ff; --ok:#5bd68b; --err:#ff8a80; --warn:#f2c35b; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:980px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.35rem; margin:.2rem 0 .6rem; } h2 { font-size:1.05rem; margin:0 0 .6rem; } h4 { margin:.6rem 0 .2rem; }
+  .banner { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--warn); border-radius:8px; padding:10px 14px; color:var(--mute); font-size:.88rem; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin:14px 0; }
+  label { display:block; font-size:.85rem; color:var(--mute); margin:.5rem 0 .2rem; }
+  input[type=text], input[type=password], input[type=number], textarea, select { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:6px; background:transparent; color:var(--ink); font:inherit; }
+  input[type=file] { color:var(--ink); max-width:100%; }
+  textarea { min-height:70px; resize:vertical; }
+  button { background:var(--acc); color:#fff; border:0; border-radius:6px; padding:8px 14px; font:inherit; cursor:pointer; margin-top:.6rem; }
+  button.sec { background:transparent; color:var(--acc); border:1px solid var(--acc); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; } .row > * { flex:1 1 200px; }
+  .status { font-size:.85rem; font-weight:600; margin:.6rem 0 .2rem; } .status.ok { color:var(--ok); } .status.err { color:var(--err); }
+  .errmsg { color:var(--err); margin:.2rem 0; } .warn { color:var(--warn); } .small { font-size:.82rem; margin:.15rem 0; }
+  .big { font-size:1.25rem; font-weight:700; margin:.3rem 0; }
+  .bars { margin:.3rem 0 .6rem; } .bar { display:grid; grid-template-columns:170px 1fr 56px; gap:8px; align-items:center; font-size:.82rem; }
+  .track { background:var(--line); border-radius:4px; height:10px; overflow:hidden; } .track i { display:block; height:100%; background:var(--acc); }
+  .val { text-align:right; color:var(--mute); }
+  .badge { display:inline-block; padding:3px 10px; border-radius:999px; font-size:.85rem; font-weight:600; border:1px solid currentColor; }
+  .badge.warn { color:var(--warn); } .badge.good { color:var(--ok); }
+  pre { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:10px; overflow:auto; font-size:.78rem; max-height:300px; }
+  video, canvas.hidden { max-width:100%; border-radius:8px; background:#000; } canvas.hidden { display:none; }
+  .camwrap { position:relative; display:inline-block; max-width:100%; } .overlay { position:absolute; left:8px; top:8px; background:rgba(0,0,0,.6); color:#fff; padding:4px 10px; border-radius:6px; font-weight:700; }
+  table { border-collapse:collapse; font-size:.85rem; } td,th { border:1px solid var(--line); padding:3px 10px; text-align:left; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Demo · API de reconocimiento de emociones multimodal</h1>
+  <div class="banner">
+    Esta herramienta estima <b>categorías de expresión facial</b> y <b>clasificaciones de texto</b>; no determina la emoción interna, la sinceridad ni el
+    estado psicológico de una persona. La <b>incongruencia no indica engaño</b>. Uso académico. Procese imágenes o video de otras personas solo con su
+    consentimiento. Nada de lo que envíe se guarda en el servidor.
+  </div>
+
+  <section class="card">
+    <h2>0 · Conexión</h2>
+    <label for="token">Token de acceso (el valor de <code>API_TOKEN</code> de su archivo <code>.env</code>; solo se mantiene en memoria de esta pestaña)</label>
+    <input id="token" type="password" autocomplete="off" placeholder="Pegue su token">
+    <button id="btnHealth">Probar conexión y modelos</button>
+    <div id="outHealth"></div>
+  </section>
+
+  <section class="card">
+    <h2>1 · Texto</h2>
+    <label for="txt">Texto en español</label>
+    <textarea id="txt">Hoy me siento muy feliz</textarea>
+    <button id="btnText">Analizar texto</button>
+    <div id="outText"></div>
+  </section>
+
+  <section class="card">
+    <h2>2 · Imagen</h2>
+    <label for="img">Imagen JPEG o PNG (máx. 5 MB)</label>
+    <input id="img" type="file" accept="image/jpeg,image/png">
+    <button id="btnImg">Analizar imagen</button>
+    <div id="outImg"></div>
+  </section>
+
+  <section class="card">
+    <h2>3 · Video (asíncrono, ResNet50 + LSTM)</h2>
+    <label for="vid">Video MP4 (máx. 50 MB y 60 s)</label>
+    <input id="vid" type="file" accept="video/mp4">
+    <label for="vfps">Fotogramas por segundo a muestrear (1–5)</label>
+    <input id="vfps" type="number" min="1" max="5" step="0.5" value="2">
+    <button id="btnVid">Analizar video</button>
+    <div id="outVid"></div>
+  </section>
+
+  <section class="card">
+    <h2>4 · Multimodal (texto + imagen o video) con fusión tardía</h2>
+    <label for="mtxt">Texto</label>
+    <textarea id="mtxt">Estoy muy triste</textarea>
+    <div class="row">
+      <div><label for="mimg">Imagen (JPEG/PNG)</label><input id="mimg" type="file" accept="image/jpeg,image/png"></div>
+      <div><label for="mvid">…o video (MP4)</label><input id="mvid" type="file" accept="video/mp4"></div>
+    </div>
+    <label for="mw">Peso visual: <span id="mwv">0.5</span> (peso del texto = 1 − peso visual)</label>
+    <input id="mw" type="range" min="0" max="1" step="0.05" value="0.5">
+    <button id="btnMulti">Analizar y fusionar</button>
+    <div id="outMulti"></div>
+  </section>
+
+  <section class="card">
+    <h2>5 · Cámara en vivo (WebSocket, ventana temporal con LSTM)</h2>
+    <p class="small" style="color:var(--mute)">El navegador captura los fotogramas y los envía; el servidor no accede a la cámara. Solo aparece una persona a la vez para un análisis claro.</p>
+    <label for="fps">Fotogramas por segundo (1–5)</label>
+    <input id="fps" type="number" min="1" max="5" step="0.5" value="2">
+    <button id="btnCamStart">Iniciar cámara</button>
+    <button id="btnCamStop" class="sec" disabled>Detener</button>
+    <p id="camState" class="small">Estado: detenida</p>
+    <div class="camwrap"><video id="cam" autoplay playsinline muted width="480"></video><div id="overlay" class="overlay" hidden></div></div>
+    <canvas id="canvas" class="hidden"></canvas>
+    <div id="camStats" class="small"></div>
+    <pre id="camLast" hidden></pre>
+    <div id="outCam"></div>
+  </section>
+
+  <section class="card" id="liveCard">
+    <h2>6 · Multimodal en vivo (cámara + texto mientras escribe)</h2>
+    <p class="small" style="color:var(--mute)">La cámara analiza su expresión facial mientras escribe. Cada vez que hace una pausa al teclear (~0,5 s), el texto se clasifica y se fusiona con la expresión de los últimos segundos (fusión tardía de probabilidades) y se evalúa la incongruencia. Un texto a medio escribir puede clasificarse distinto del final. El texto no se guarda en el servidor.</p>
+    <div class="row">
+      <div><label for="lfps">Fotogramas por segundo (1–5)</label><input id="lfps" type="number" min="1" max="5" step="0.5" value="2"></div>
+      <div><label for="lwin">Ventana visual (s, 1–30)</label><input id="lwin" type="number" min="1" max="30" step="1" value="5"></div>
+    </div>
+    <label for="lw">Peso visual: <span id="lwv">0.5</span> (peso del texto = 1 − peso visual; se puede cambiar en vivo)</label>
+    <input id="lw" type="range" min="0" max="1" step="0.05" value="0.5">
+    <button id="btnLiveStart">Iniciar sesión en vivo</button>
+    <button id="btnLiveStop" class="sec" disabled>Detener</button>
+    <p id="liveState" class="small">Estado: detenida</p>
+    <div class="camwrap"><video id="lcam" autoplay playsinline muted width="480"></video><div id="loverlay" class="overlay" hidden></div></div>
+    <canvas id="lcanvas" class="hidden"></canvas>
+    <label for="ltxt">Escriba aquí (se analiza mientras teclea)</label>
+    <textarea id="ltxt" placeholder="Escriba un texto…" disabled></textarea>
+    <div id="liveOut"></div>
+    <pre id="liveLast" hidden></pre>
+  </section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const API = '/api/v1';
+const ES = { ANGER:'ira', DISGUST:'asco', FEAR:'miedo', HAPPINESS:'alegría', NEUTRAL:'neutral', SADNESS:'tristeza', SURPRISE:'sorpresa' };
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const pct = (v) => (v * 100).toFixed(1) + '%';
+let TOKEN = '';
+
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) { if (k === 'text') e.textContent = v; else if (k === 'class') e.className = v; else e.setAttribute(k, v); }
+  kids.forEach(k => e.append(k));
+  return e;
+}
+function bars(probs) {
+  const wrap = el('div', { class: 'bars' });
+  Object.entries(probs).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => {
+    wrap.append(el('div', { class: 'bar' },
+      el('span', { text: `${k} (${ES[k] || ''})` }),
+      el('span', { class: 'track' }, el('i', { style: `width:${(v * 100).toFixed(1)}%` })),
+      el('span', { class: 'val', text: pct(v) })));
+  });
+  return wrap;
+}
+const big = (emo, conf, prefix = '') => el('div', { class: 'big', text: `${prefix ? prefix + ': ' : ''}${emo} (${ES[emo] || ''}) · ${pct(conf)}` });
+
+async function call(path, opts = {}) {
+  TOKEN = $('#token').value.trim();
+  const headers = Object.assign({ Authorization: 'Bearer ' + TOKEN }, opts.headers || {});
+  const t0 = performance.now();
+  try {
+    const r = await fetch(path, Object.assign({}, opts, { headers }));
+    let body = null; try { body = await r.json(); } catch (e) { /* sin cuerpo JSON */ }
+    return { status: r.status, body, ms: Math.round(performance.now() - t0) };
+  } catch (e) {
+    return { status: 0, body: { error: { code: 'NETWORK_ERROR', message: String(e) } }, ms: 0 };
+  }
+}
+
+function summarize(box, b) {
+  if (b.modality === 'TEXT') {
+    box.append(big(b.emotion, b.confidence), bars(b.probabilities));
+  } else if (b.modality === 'IMAGE') {
+    if (!b.facesDetected) box.append(el('p', { text: 'No se detectó ningún rostro.' }));
+    (b.faces || []).forEach(f => box.append(el('h4', { text: f.faceId }), big(f.emotion, f.confidence), bars(f.probabilities)));
+  } else if (b.modality === 'MULTIMODAL') {
+    box.append(
+      el('p', { text: `Texto → ${b.text.emotion} (valencia ${b.text.valence}, confianza ${pct(b.text.confidence)})` }),
+      el('p', { text: `Visual → ${b.visual.emotion} (valencia ${b.visual.valence}, confianza ${pct(b.visual.confidence)})` }),
+      big(b.fusion.emotion, b.fusion.confidence, 'Fusión'), bars(b.fusion.probabilities),
+      el('span', { class: 'badge ' + (b.fusion.incongruence ? 'warn' : 'good'),
+        text: b.fusion.incongruence ? 'Incongruencia: valencias opuestas con alta confianza (no implica engaño)' : 'Sin incongruencia' }));
+  } else if (b.status) {
+    box.append(el('p', { text: `Estado: ${b.status}` }));
+    if (b.dominantExpression) {
+      box.append(big(b.dominantExpression, b.dominantConfidence || 0, 'Expresión dominante'));
+      if (b.probabilities) box.append(bars(b.probabilities));
+      if (b.temporalModel) box.append(el('p', { class: 'small', text: `Modelo temporal ${b.temporalModel.type} · ventana ${b.temporalModel.windowFrames} fotogramas · analizados ${b.temporalModel.framesAnalyzed} (con rostro: ${b.temporalModel.framesWithFace})` }));
+      if (b.timeline && b.timeline.length) {
+        const t = el('table', {}, el('tr', {}, ...['Desde (ms)', 'Hasta (ms)', 'Emoción', 'Confianza'].map(h => el('th', { text: h }))));
+        b.timeline.forEach(s => t.append(el('tr', {}, el('td', { text: s.startMs }), el('td', { text: s.endMs }), el('td', { text: s.emotion }), el('td', { text: pct(s.confidence) }))));
+        box.append(t);
+      }
+    }
+  }
+  (b.warnings || []).forEach(w => box.append(el('p', { class: 'warn small', text: '⚠ ' + w })));
+  if (b.inferenceMs != null) box.append(el('p', { class: 'small', text: `Tiempo de inferencia en el servidor: ${b.inferenceMs} ms` }));
+  if (b.modelVersions) box.append(el('p', { class: 'small', text: 'Modelos: ' + JSON.stringify(b.modelVersions) }));
+}
+function renderResult(box, res) {
+  box.replaceChildren();
+  const ok = res.status >= 200 && res.status < 300;
+  box.append(el('div', { class: 'status ' + (ok ? 'ok' : 'err'), text: `HTTP ${res.status} · ${res.ms} ms ida y vuelta` }));
+  const b = res.body || {};
+  if (b.error) box.append(el('p', { class: 'errmsg', text: `${b.error.code}: ${b.error.message}` }));
+  else summarize(box, b);
+  box.append(el('details', {}, el('summary', { text: 'JSON completo' }), el('pre', { text: JSON.stringify(b, null, 2) })));
+}
+async function poll(url, box) {
+  for (;;) {
+    const r = await call(url);
+    renderResult(box, r);
+    const s = r.body && r.body.status;
+    if (r.status >= 400 || !s || s === 'COMPLETED' || s === 'FAILED') return r;
+    await sleep(1000);
+  }
+}
+const busy = (btn, fn) => async () => { btn.disabled = true; try { await fn(); } finally { btn.disabled = false; } };
+const needFile = (input, box, name) => { if (!input.files[0]) { box.replaceChildren(el('p', { class: 'errmsg', text: `Seleccione ${name}.` })); return null; } return input.files[0]; };
+
+$('#btnHealth').onclick = busy($('#btnHealth'), async () => {
+  const box = $('#outHealth'); box.replaceChildren(el('p', { text: 'Consultando…' }));
+  const r = await call('/health/ready');
+  box.replaceChildren(el('div', { class: 'status ' + (r.status === 200 ? 'ok' : 'err'), text: `/health/ready → HTTP ${r.status}` }),
+    el('pre', { text: JSON.stringify(r.body, null, 2) }));
+});
+$('#btnText').onclick = busy($('#btnText'), async () => {
+  renderResult($('#outText'), await call(API + '/emotions/text', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: $('#txt').value, language: 'es' }) }));
+});
+$('#btnImg').onclick = busy($('#btnImg'), async () => {
+  const f = needFile($('#img'), $('#outImg'), 'una imagen'); if (!f) return;
+  const fd = new FormData(); fd.append('image', f);
+  renderResult($('#outImg'), await call(API + '/emotions/image', { method: 'POST', body: fd }));
+});
+$('#btnVid').onclick = busy($('#btnVid'), async () => {
+  const box = $('#outVid'); const f = needFile($('#vid'), box, 'un video MP4'); if (!f) return;
+  const fd = new FormData(); fd.append('video', f); fd.append('sampleFps', $('#vfps').value);
+  const r = await call(API + '/emotions/video', { method: 'POST', body: fd });
+  if (r.status !== 202) return renderResult(box, r);
+  await poll(r.body.resultUrl, box);
+});
+$('#mw').oninput = () => { $('#mwv').textContent = $('#mw').value; };
+$('#btnMulti').onclick = busy($('#btnMulti'), async () => {
+  const box = $('#outMulti');
+  const fi = $('#mimg').files[0], fv = $('#mvid').files[0];
+  if (!!fi === !!fv) { box.replaceChildren(el('p', { class: 'errmsg', text: 'Seleccione exactamente una fuente visual: imagen O video.' })); return; }
+  const fd = new FormData(); fd.append('text', $('#mtxt').value); fd.append('language', 'es'); fd.append('visualWeight', $('#mw').value);
+  fd.append(fi ? 'image' : 'video', fi || fv);
+  const r = await call(API + '/emotions/analyze', { method: 'POST', body: fd });
+  if (r.status !== 202) return renderResult(box, r);
+  await poll(r.body.resultUrl, box);
+});
+
+/* ---------- cámara en vivo ---------- */
+const cam = { stream: null, ws: null, timer: null, pending: false, sentAt: 0, rtt: [], inf: [] };
+const camState = (t) => { $('#camState').textContent = 'Estado: ' + t; };
+function camCleanup() {
+  clearInterval(cam.timer); cam.timer = null; cam.pending = false;
+  if (cam.stream) cam.stream.getTracks().forEach(t => t.stop());
+  cam.stream = null; $('#cam').srcObject = null; $('#overlay').hidden = true;
+  $('#btnCamStart').disabled = false; $('#btnCamStop').disabled = true;
+}
+function sendFrame() {
+  if (!cam.ws || cam.ws.readyState !== 1 || cam.pending) return;
+  const v = $('#cam'), c = $('#canvas'); if (!v.videoWidth) return;
+  c.width = 640; c.height = 480; c.getContext('2d').drawImage(v, 0, 0, 640, 480);
+  c.toBlob(b => { if (b && cam.ws && cam.ws.readyState === 1) { cam.pending = true; cam.sentAt = performance.now(); cam.ws.send(b); } }, 'image/jpeg', 0.8);
+}
+const avg = (a) => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : 0;
+function onCamMessage(m, fps) {
+  if (m.type === 'ready') { camState(`conectada · ventana temporal de ${m.windowFrames} fotogramas · ${m.sampleFps} fps`); cam.timer = setInterval(sendFrame, 1000 / fps); return; }
+  if (m.type === 'closing') { camState('cerrada (' + m.reason + ')'); return; }
+  if (m.error) { cam.pending = false; $('#outCam').replaceChildren(el('p', { class: 'errmsg', text: `${m.error.code}: ${m.error.message}` })); return; }
+  cam.pending = false;
+  if (m.dropped) return;
+  cam.rtt.push(Math.round(performance.now() - cam.sentAt)); cam.inf.push(m.inferenceMs || 0);
+  const f = (m.faces || [])[0];
+  const ov = $('#overlay'); ov.hidden = false;
+  ov.textContent = f ? `${f.emotion} (${ES[f.emotion] || ''}) ${pct(f.confidence)}` : 'Sin rostro';
+  $('#camStats').textContent = `Fotogramas: ${cam.rtt.length} · rostros: ${m.facesDetected} · modo: ${f ? f.mode : '-'} · ventana llena: ${m.temporal ? m.temporal.windowFilled + '/' + m.temporal.windowFrames : '-'} · inferencia media: ${avg(cam.inf)} ms · ida y vuelta media: ${avg(cam.rtt)} ms`;
+  const pre = $('#camLast'); pre.hidden = false; pre.textContent = JSON.stringify(m, null, 2);
+}
+$('#btnCamStart').onclick = async () => {
+  const fps = Math.min(5, Math.max(1, Number($('#fps').value) || 2));
+  const out = $('#outCam'); out.replaceChildren(); cam.rtt = []; cam.inf = [];
+  $('#btnCamStart').disabled = true; $('#btnCamStop').disabled = false; camState('solicitando cámara…');
+  try { cam.stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false }); }
+  catch (e) { out.replaceChildren(el('p', { class: 'errmsg', text: 'No se pudo abrir la cámara: ' + e.message })); camCleanup(); camState('detenida'); return; }
+  $('#cam').srcObject = cam.stream;
+  const r = await call(API + '/emotions/streams', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sampleFps: fps }) });
+  if (r.status !== 201) { renderResult(out, r); camCleanup(); camState('detenida'); return; }
+  const s = r.body;
+  camState('conectando WebSocket…');
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + s.websocketPath);
+  cam.ws = ws;
+  ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token: s.streamToken }));  // token efímero de un solo uso, nunca en la URL
+  ws.onmessage = (ev) => onCamMessage(JSON.parse(ev.data), fps);
+  ws.onclose = () => { camCleanup(); camState('detenida'); cam.ws = null; };
+};
+$('#btnCamStop').onclick = () => {
+  if (cam.ws && cam.ws.readyState === 1) cam.ws.send(JSON.stringify({ type: 'close' }));
+  setTimeout(() => { if (cam.ws) cam.ws.close(); }, 300);
+  camCleanup(); camState('detenida');
+};
+window.addEventListener('beforeunload', () => { if (cam.ws) cam.ws.close(); });
+
+/* ---------- multimodal en vivo: cámara + texto ---------- */
+const live = { stream: null, ws: null, timer: null, pending: false, pendingAt: 0, debounce: null, retry: null, version: 0, lastSent: null, info: null, n: 0 };
+const liveState = (t) => { $('#liveState').textContent = 'Estado: ' + t; };
+const FUSION_STATUS = { OK: 'fusión calculada', WAITING_FOR_TEXT: 'esperando texto', WAITING_FOR_FACE: 'esperando un rostro', FACE_COUNT_NOT_SUPPORTED_FOR_FUSION: 'hay más de un rostro: no se fusiona' };
+function liveCleanup() {
+  clearInterval(live.timer); clearTimeout(live.debounce); clearTimeout(live.retry);
+  live.timer = live.debounce = live.retry = null; live.pending = false;
+  if (live.stream) live.stream.getTracks().forEach(t => t.stop());
+  live.stream = null; $('#lcam').srcObject = null; $('#loverlay').hidden = true;
+  $('#btnLiveStart').disabled = false; $('#btnLiveStop').disabled = true; $('#ltxt').disabled = true;
+}
+function liveSendFrame() {
+  if (!live.ws || live.ws.readyState !== 1) return;
+  if (live.pending && performance.now() - live.pendingAt < 3000) return;
+  const v = $('#lcam'), c = $('#lcanvas'); if (!v.videoWidth) return;
+  c.width = 640; c.height = 480; c.getContext('2d').drawImage(v, 0, 0, 640, 480);
+  c.toBlob(b => { if (b && live.ws && live.ws.readyState === 1) { live.pending = true; live.pendingAt = performance.now(); live.ws.send(b); } }, 'image/jpeg', 0.8);
+}
+function liveSendText() {
+  if (!live.ws || live.ws.readyState !== 1) return;
+  const t = $('#ltxt').value;
+  if (t === live.lastSent) return;
+  live.lastSent = t; live.version += 1;
+  live.ws.send(JSON.stringify({ type: 'text', text: t, version: live.version }));
+}
+function renderLive(m) {
+  const box = $('#liveOut'); box.replaceChildren();
+  const faces = m.facesDetected == null ? '-' : m.facesDetected;
+  box.append(el('div', { class: 'status ok', text: `Rostros: ${faces} · ${FUSION_STATUS[m.fusionStatus] || m.fusionStatus} · inferencia ${m.inferenceMs} ms · actualización #${live.n}` }));
+  if (m.visual) box.append(big(m.visual.emotion, m.visual.confidence, `Rostro (media de ${m.visual.framesUsed} fotogramas)`), bars(m.visual.probabilities));
+  if (m.text) box.append(big(m.text.emotion, m.text.confidence, `Texto (v${m.text.textVersion ?? '-'}, ${m.text.chars} caracteres)`), bars(m.text.probabilities));
+  if (m.fusion) {
+    box.append(big(m.fusion.emotion, m.fusion.confidence, `Fusión (visual ${m.fusion.visualWeight} / texto ${m.fusion.textWeight})`), bars(m.fusion.probabilities),
+      el('span', { class: 'badge ' + (m.fusion.incongruence ? 'warn' : 'good'),
+        text: m.fusion.incongruence ? 'Incongruencia: valencias opuestas con alta confianza (no implica engaño)' : 'Sin incongruencia' }));
+  }
+  (m.warnings || []).forEach(w => box.append(el('p', { class: 'warn small', text: '⚠ ' + w })));
+  const ov = $('#loverlay'); ov.hidden = false;
+  ov.textContent = m.visual ? `${m.visual.emotion} (${ES[m.visual.emotion] || ''}) ${pct(m.visual.confidence)}` : (m.facesDetected === 0 ? 'Sin rostro' : '…');
+  const pre = $('#liveLast'); pre.hidden = false; pre.textContent = JSON.stringify(m, null, 2);
+}
+function onLiveMessage(m) {
+  if (m.type === 'ready') {
+    live.info = m; $('#ltxt').disabled = false;
+    liveState(`conectada · ${m.sampleFps} fps · ventana ${m.visualWindowSeconds} s · umbral de incongruencia ${m.incongruenceThreshold}`);
+    live.timer = setInterval(liveSendFrame, 1000 / m.sampleFps); return;
+  }
+  if (m.type === 'closing') { liveState('cerrada (' + m.reason + ')'); return; }
+  if (m.type === 'error') {
+    live.pending = false;
+    $('#liveOut').replaceChildren(el('p', { class: 'errmsg', text: `${m.error.code}: ${m.error.message}` })); return;
+  }
+  if (m.type === 'dropped') {
+    if (m.kind === 'FRAME') live.pending = false;
+    if (m.kind === 'TEXT') {  // enviado demasiado pronto: reenviar el último texto tras la espera indicada
+      live.lastSent = null; clearTimeout(live.retry); live.retry = setTimeout(liveSendText, (m.retryAfterMs || 300) + 20);
+    }
+    return;
+  }
+  if (m.type === 'update') {
+    if (m.trigger === 'FRAME') live.pending = false;
+    live.n += 1; renderLive(m);
+  }
+}
+$('#lw').oninput = () => {
+  $('#lwv').textContent = $('#lw').value;
+  if (live.ws && live.ws.readyState === 1) live.ws.send(JSON.stringify({ type: 'config', visualWeight: Number($('#lw').value) }));
+};
+$('#ltxt').addEventListener('input', () => { clearTimeout(live.debounce); live.debounce = setTimeout(liveSendText, 500); });
+$('#btnLiveStart').onclick = async () => {
+  const fps = Math.min(5, Math.max(1, Number($('#lfps').value) || 2));
+  const win = Math.min(30, Math.max(1, Number($('#lwin').value) || 5));
+  const out = $('#liveOut'); out.replaceChildren(); live.n = 0; live.version = 0; live.lastSent = null;
+  $('#btnLiveStart').disabled = true; $('#btnLiveStop').disabled = false; liveState('solicitando cámara…');
+  try { live.stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false }); }
+  catch (e) { out.replaceChildren(el('p', { class: 'errmsg', text: 'No se pudo abrir la cámara: ' + e.message })); liveCleanup(); liveState('detenida'); return; }
+  $('#lcam').srcObject = live.stream;
+  const r = await call(API + '/emotions/live', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sampleFps: fps, visualWeight: Number($('#lw').value), visualWindowSeconds: win, language: 'es' }) });
+  if (r.status !== 201) { renderResult(out, r); liveCleanup(); liveState('detenida'); return; }
+  const s = r.body;
+  liveState('conectando WebSocket…');
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + s.websocketPath);
+  live.ws = ws;
+  ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token: s.streamToken }));  // token efímero de un solo uso, nunca en la URL
+  ws.onmessage = (ev) => onLiveMessage(JSON.parse(ev.data));
+  ws.onclose = () => { liveCleanup(); liveState('detenida'); live.ws = null; };
+};
+$('#btnLiveStop').onclick = () => {
+  if (live.ws && live.ws.readyState === 1) live.ws.send(JSON.stringify({ type: 'close' }));
+  setTimeout(() => { if (live.ws) live.ws.close(); }, 300);
+  liveCleanup(); liveState('detenida');
+};
+window.addEventListener('beforeunload', () => { if (live.ws) live.ws.close(); });
+</script>
+</body>
+</html>

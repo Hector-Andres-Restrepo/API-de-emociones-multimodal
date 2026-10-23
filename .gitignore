@@ -1,0 +1,8 @@
+.env
+__pycache__/
+.pytest_cache/
+.venv/
+samples/*
+!samples/.gitkeep
+evidence/*.mp4
+evidence/*.jpg

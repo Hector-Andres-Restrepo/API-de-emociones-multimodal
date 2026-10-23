@@ -1,0 +1,4 @@
+# Solo para scripts cliente (demo de cámara y evidencias); no entra en la imagen Docker
+httpx>=0.27
+websockets>=12
+opencv-python>=4.8
